@@ -1,0 +1,1097 @@
+openapi: 3.0.0
+info:
+  title: Digital Wardrobe API
+  description: |
+    API для управления цифровым гардеробом. Позволяет загружать вещи, создавать образы,
+    получать рекомендации от ИИ-стилиста с учётом сезона, стиля и цвета.
+  version: 1.0.0
+servers:
+  - url: https://api.wardrobe.example/v1
+    description: Production server
+  - url: http://localhost:3000/api
+    description: Local development
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT-токен, полученный при входе.
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Validation failed"
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        first_name:
+          type: string
+          example: "Иван"
+        last_name:
+          type: string
+          example: "Петров"
+        email:
+          type: string
+          format: email
+          example: "ivan@example.com"
+        created_at:
+          type: string
+          format: date-time
+          example: "2023-10-25T14:30:00Z"
+
+    Category:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        key:
+          type: string
+          example: "upper_body"
+        name:
+          type: string
+          example: "Верх"
+        subcategories:
+          type: array
+          items:
+            $ref: '#/components/schemas/Subcategory'
+
+    Subcategory:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 101
+        key:
+          type: string
+          example: "t_shirt"
+        name:
+          type: string
+          example: "Футболка"
+
+    Season:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+          enum: [Любой, Лето, Зима, Демисезон]
+
+    Style:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+          example: "повседневная"
+
+    Item:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        image_url:
+          type: string
+          format: uri
+        name:
+          type: string
+          maxLength: 100
+        category_id:
+          type: integer
+        subcategory_id:
+          type: integer
+          nullable: true
+        brand:
+          type: string
+          nullable: true
+        color:
+          type: string
+          nullable: true
+        season:
+          type: string
+          nullable: true
+          enum: [Любой, Лето, Зима, Демисезон]
+        style:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - user_id
+        - image_url
+        - name
+        - category_id
+        - created_at
+        - updated_at
+
+    Outfit:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Item'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    AiGeneratedOutfit:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Item'
+        recommendation_links:
+          type: array
+          items:
+            type: string
+            format: uri
+            example: "https://shop.example/product/123"
+
+    PurchaseRecommendation:
+      type: object
+      properties:
+        item_name:
+          type: string
+          example: "Красное платье"
+        stores:
+          type: array
+          items:
+            type: object
+            properties:
+              store_name:
+                type: string
+                example: "Lamoda"
+              url:
+                type: string
+                format: uri
+                example: "https://lamoda.ru/product/456"
+              price:
+                type: string
+                example: "49.99 $"
+
+  parameters:
+    ItemId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: UUID вещи
+    OutfitId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: UUID образа
+
+  responses:
+    Unauthorized:
+      description: Отсутствует или недействителен токен авторизации
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Доступ запрещён (ресурс принадлежит другому пользователю)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    BadRequest:
+      description: Некорректный запрос (ошибка валидации)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Конфликт (например, дубликат email или вещь уже в образе)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Ресурс не найден
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    UnsupportedMediaType:
+      description: Неподдерживаемый формат файла (требуется jpg/png/webp)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    UnprocessableEntity:
+      description: Некорректные ссылочные данные (например, несуществующая категория)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    TooManyRequests:
+      description: Превышен лимит запросов
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InternalError:
+      description: Внутренняя ошибка сервера
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+security:
+  - BearerAuth: []
+
+paths:
+  # ----- Аутентификация -----
+  /auth/register:
+    post:
+      summary: Регистрация нового пользователя
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, first_name, last_name]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: "user@example.com"
+                password:
+                  type: string
+                  format: password
+                  example: "StrongP@ssw0rd"
+                first_name:
+                  type: string
+                  example: "Анна"
+                last_name:
+                  type: string
+                  example: "Смирнова"
+      responses:
+        '201':
+          description: Пользователь успешно создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Email уже зарегистрирован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /auth/login:
+    post:
+      summary: Вход в систему, получение JWT
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Успешный вход
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    example: "eyJhbGciOiJIUzI1NiIs..."
+                  user:
+                    $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Неверные учетные данные
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  # ----- Справочники -----
+  /categories:
+    get:
+      summary: Получить все категории с подкатегориями
+      tags: [Categories]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  categories:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Category'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /seasons:
+    get:
+      summary: Получить список сезонов
+      tags: [Dictionaries]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  seasons:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Season'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /styles:
+    get:
+      summary: Получить список стилей
+      tags: [Dictionaries]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Успешно
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  styles:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Style'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  # ----- Вещи (Items) -----
+  /items:
+    get:
+      summary: Получить список вещей текущего пользователя с фильтрацией
+      tags: [Items]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: category_id
+          in: query
+          schema:
+            type: integer
+          description: Фильтр по категории
+        - name: subcategory_id
+          in: query
+          schema:
+            type: integer
+          description: Фильтр по подкатегории
+        - name: season
+          in: query
+          schema:
+            type: string
+            enum: [Любой, Лето, Зима, Демисезон]
+        - name: color
+          in: query
+          schema:
+            type: string
+        - name: brand
+          in: query
+          schema:
+            type: string
+        - name: style
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Список вещей
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Item'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      summary: Добавить новую вещь
+      tags: [Items]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [name, category_id, image]
+              properties:
+                name:
+                  type: string
+                  maxLength: 100
+                  example: "Кожаная куртка"
+                category_id:
+                  type: integer
+                  example: 1
+                subcategory_id:
+                  type: integer
+                  nullable: true
+                  example: 5
+                brand:
+                  type: string
+                  nullable: true
+                  example: "Zara"
+                color:
+                  type: string
+                  nullable: true
+                  example: "Черный"
+                season:
+                  type: string
+                  nullable: true
+                  enum: [Любой, Лето, Зима, Демисезон]
+                  example: "Демисезон"
+                style:
+                  type: string
+                  nullable: true
+                  example: "повседневная"
+                image:
+                  type: string
+                  format: binary
+                  description: Файл изображения (jpg, png, webp до 10 МБ)
+      responses:
+        '201':
+          description: Вещь успешно создана
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  message:
+                    type: string
+                    example: "Item created successfully"
+                  imageUrl:
+                    type: string
+                    format: uri
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          description: Файл слишком большой (макс. 10 МБ)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: Сервис хранения изображений недоступен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /items/{id}:
+    get:
+      summary: Получить детальную информацию о вещи
+      tags: [Items]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ItemId'
+      responses:
+        '200':
+          description: Детали вещи
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+    patch:
+      summary: Частичное обновление вещи (можно изменить любые поля, включая изображение)
+      tags: [Items]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ItemId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Новое название
+                category_id:
+                  type: integer
+                subcategory_id:
+                  type: integer
+                  nullable: true
+                brand:
+                  type: string
+                  nullable: true
+                color:
+                  type: string
+                  nullable: true
+                season:
+                  type: string
+                  nullable: true
+                  enum: [Любой, Лето, Зима, Демисезон]
+                style:
+                  type: string
+                  nullable: true
+                image:
+                  type: string
+                  format: binary
+                  description: Новое изображение (если нужно заменить)
+      responses:
+        '200':
+          description: Вещь обновлена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          description: Новый файл слишком большой
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: Сервис хранения изображений недоступен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      summary: Удалить вещь
+      tags: [Items]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ItemId'
+      responses:
+        '204':
+          description: Вещь успешно удалена (нет содержимого)
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  # ----- Образы (Outfits) -----
+  /outfits:
+    get:
+      summary: Получить все образы пользователя
+      tags: [Outfits]
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Список образов
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Outfit'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+    post:
+      summary: Создать новый образ (самостоятельная сборка)
+      tags: [Outfits]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, items]
+              properties:
+                name:
+                  type: string
+                  example: "Летний образ"
+                description:
+                  type: string
+                  example: "Для прогулок по городу"
+                items:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                  description: Список ID вещей, входящих в образ
+      responses:
+        '201':
+          description: Образ создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Outfit'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          description: Один или несколько itemId не существуют
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /outfits/{id}:
+    get:
+      summary: Получить детали образа
+      tags: [Outfits]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OutfitId'
+      responses:
+        '200':
+          description: Детали образа
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Outfit'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+    put:
+      summary: Полное обновление образа (замена всех полей и состава вещей)
+      tags: [Outfits]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OutfitId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, items]
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                items:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+      responses:
+        '200':
+          description: Образ обновлён
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Outfit'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Один или несколько itemId не существуют
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+    patch:
+      summary: Частичное обновление образа (только название и описание)
+      tags: [Outfits]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OutfitId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+      responses:
+        '200':
+          description: Образ обновлён
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Outfit'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+    delete:
+      summary: Удалить образ
+      tags: [Outfits]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OutfitId'
+      responses:
+        '204':
+          description: Образ удалён
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  # ----- Управление составом образа -----
+  /outfits/{id}/items:
+    post:
+      summary: Добавить вещь в образ
+      tags: [Outfits]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OutfitId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [itemId]
+              properties:
+                itemId:
+                  type: string
+                  format: uuid
+                  description: UUID вещи для добавления
+      responses:
+        '200':
+          description: Вещь добавлена, возвращён обновлённый образ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Outfit'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Образ или вещь не найдены
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Вещь уже присутствует в образе
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Указанная вещь не принадлежит пользователю
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /outfits/{id}/items/{itemId}:
+    delete:
+      summary: Удалить вещь из образа
+      tags: [Outfits]
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OutfitId'
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID вещи
+      responses:
+        '200':
+          description: Вещь удалена, возвращён обновлённый образ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Outfit'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Образ или вещь не найдены
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  # ----- ИИ-стилист -----
+  /ai/generate-outfit:
+    post:
+      summary: Сгенерировать готовый образ с помощью ИИ
+      description: |
+        ИИ анализирует гардероб пользователя и предлагает сочетание вещей,
+        а также ссылки на магазины для недостающих аксессуаров.
+        Можно указать предпочтения по сезону, стилю и цвету.
+      tags: [AI Stylist]
+      security:
+        - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                season:
+                  type: string
+                  enum: [Любой, Лето, Зима, Демисезон]
+                  description: Сезонность образа
+                style:
+                  type: string
+                  description: Желаемый стиль (например, "повседневный", "деловой")
+                color:
+                  type: string
+                  description: Предпочтительный цвет или цветовая гамма (например, "синий")
+                colors:
+                  type: array
+                  items:
+                    type: string
+                  description: Список предпочтительных цветов (если указан, `color` игнорируется)
+                random:
+                  type: boolean
+                  description: Если true, игнорировать остальные параметры и выбрать случайные вещи
+      responses:
+        '200':
+          description: Сгенерированный образ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiGeneratedOutfit'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: Сервис ИИ временно недоступен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /ai/purchase-recommendations:
+    get:
+      summary: Получить рекомендации по покупке аксессуаров или похожих вещей
+      description: Поиск товаров в магазинах-партнёрах по заданным параметрам.
+      tags: [AI Stylist]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: itemId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: ID вещи, для которой ищутся похожие товары
+        - name: query
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Текстовый поиск (например, "красное платье")
+        - name: color
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Фильтр по цвету (например, "красный")
+      responses:
+        '200':
+          description: Список рекомендаций
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PurchaseRecommendation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: Внешний сервис рекомендаций недоступен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
