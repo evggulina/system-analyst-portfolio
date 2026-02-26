@@ -1,0 +1,78 @@
+@startuml 
+
+' ----- Сущности -----
+class User {
+  - id: UUID
+  - first_name: String
+  - last_name: String
+  - email: String
+  - created_at: DateTime
+  + register(email, password, first_name, last_name): User
+  + login(email, password): Token
+  + getProfile(): User
+}
+
+class Item {
+  - id: UUID
+  - image_url: String
+  - name: String
+  - brand: String [0..1]
+  - color: String [0..1]
+  - created_at: DateTime
+  - updated_at: DateTime
+  + getById(id): Item
+  + getFiltered(filters): List<Item>
+}
+
+class Category {
+  - id: Integer
+  - key: String
+  - name: String
+  + getAll(): List<Category>
+  + getById(id): Category
+}
+
+class Subcategory {
+  - id: Integer
+  - key: String
+  - name: String
+  + getByCategory(categoryId): List<Subcategory>
+}
+
+class Season {
+  - id: Integer
+  - name: String
+  + getAll(): List<Season>
+}
+
+class Style {
+  - id: Integer
+  - name: String
+  + getAll(): List<Style>
+}
+
+class Outfit {
+  - id: UUID
+  - name: String
+  - description: String [0..1]
+  - created_at: DateTime
+  - updated_at: DateTime
+  + getById(id): Outfit
+  + getAll(): List<Outfit>
+  + addItem(itemId): Outfit
+  + removeItem(itemId): Outfit
+}
+
+
+' ----- Связи (с правильными кратностями) -----
+User "1" *-- "0..*" Item          : владеет
+User "1" *-- "0..*" Outfit        : владеет
+Category "1" *-- "0..*" Subcategory : содержит
+Item "0..*" -- "1" Category       : относится к
+Item "0..*" -- "0..1" Subcategory : уточняется
+Item "0..*" -- "0..1" Season      : имеет сезон
+Item "0..*" -- "0..1" Style       : имеет стиль
+Outfit "0..*" -- "*" Item         : состоит из
+
+
+@enduml
