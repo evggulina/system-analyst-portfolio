@@ -30,7 +30,7 @@
 
 ### 3. Спецификация API
 - [OpenAPI спецификация](specs/openapi.yaml) – описание всех эндпоинтов, моделей запросов и ответов.
-- [Интерактивная документация в Swagger UI](spec/) - интерактивная спецификация с помощью встроенного Swagger
+- [Интерактивная документация в Swagger UI](https://evggulina.github.io/system-analyst-portfolio/digital-wardrobe/specs/) - интерактивная спецификация с помощью встроенного Swagger
 
 ### 4. Тестовые сценарии в Postman
 - [Коллекция Postman](postman/DigitalWardrobe_API.postman_collection.json) – запросы ко всем эндпоинтам с примерами ответов и автоматическими тестами.
@@ -47,4 +47,5 @@
 - Telegram: [@GulinaEvg](https://t.me/GulinaEvg)
 - Email: evg_gulina@mail.ru
 - Телефон: +7 (926) 245-24-62
+
 
