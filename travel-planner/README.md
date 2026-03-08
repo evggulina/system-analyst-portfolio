@@ -14,28 +14,28 @@
 ## Моя роль
 
 Системный аналитик. В рамках проекта я:
-- сформулировал функциональные и нефункциональные требования;
-- разработал use case, activity, sequence и ER-диаграммы;
-- спроектировал модель данных и API;
-- описал интеграции с внешними сервисами и ролевую модель.
+- сформулировала функциональные и нефункциональные требования;
+- разработала use case, activity, sequence и ER-диаграммы;
+- спроектировала модель данных и API;
+- описала интеграции с внешними сервисами и ролевую модель.
 
 ## Артефакты проекта
 
 ### 1. Требования и сценарии использования
 - [Полная спецификация системы](docs/specification.md) – объединяет требования, варианты использования, модель данных, API и описание процессов.
-- [Use Case диаграмма](diagrams/use-case/use-case.png) – акторы и их взаимодействие с системой.
+- [Use Case диаграмма](diagrams/use-case.png) – акторы и их взаимодействие с системой.
 
 ### 2. Диаграммы
 Все диаграммы представлены в формате PNG (для просмотра) и исходных PlantUML-файлах (для редактирования).
 
 | Диаграмма | Описание | Просмотр | Исходник |
 |-----------|----------|----------|----------|
-| Use Case диаграмма | Показывает актёров (организатор, участник, внешние API) и их прецеденты | [PNG](diagrams/use-case/use-case.png) | [draw.io](diagrams/use-case.drawio) |
-| Activity диаграмма (разрешение конфликтов) | Детальный процесс голосования при конфликтах | [PNG](diagrams/activity/conflict-resolution.png) | [draw.io](diagrams/activity/conflict-resolution.drawio) |
-| Sequence диаграмма 1: Поиск рейса | Взаимодействие при поиске с fallback на Яндекс.Авиа | [PNG](diagrams/sequence/01-flight-search.png) | [PlantUML](diagrams/sequence/01-flight-search.puml) |
-| Sequence диаграмма 2: Выбор рейса и пассажиры | Получение деталей и сохранение данных | [PNG](diagrams/sequence/02-flight-selection-passengers.png) | [PlantUML](diagrams/sequence/02-flight-selection-passengers.puml) |
-| Sequence диаграмма 3: Оплата и бронирование | Платёжный процесс, обработка успеха/ошибки, финальное бронирование | [PNG](diagrams/sequence/03-payment-booking.png) | [PlantUML](diagrams/sequence/03-payment-booking.puml) |
-| ER-диаграмма | Модель данных (таблицы и связи) | [PNG](diagrams/er/er-diagram.png) | [draw.io](diagrams/er/er-diagram.drawio) |
+| Use Case диаграмма | Показывает актёров (организатор, участник, внешние API) и их прецеденты | [PNG](diagrams/use-case.png) | [draw.io](diagrams/use-case.drawio) |
+| Activity диаграмма (разрешение конфликтов) | Детальный процесс голосования при конфликтах | [PNG](diagrams/activity-diagram.png) | [draw.io](diagrams/activity-diagram.drawio) |
+| Sequence диаграмма 1: Поиск рейса | Взаимодействие при поиске с fallback на Яндекс.Авиа | [PNG](diagrams/01-flight-search.png) | [PlantUML](diagrams/01-flight-search.puml) |
+| Sequence диаграмма 2: Выбор рейса и пассажиры | Получение деталей и сохранение данных | [PNG](diagrams/02-flight-selection-passengers.png) | [PlantUML](diagrams/02-flight-selection-passengers.puml) |
+| Sequence диаграмма 3: Оплата и бронирование | Платёжный процесс, обработка успеха/ошибки, финальное бронирование | [PNG](diagrams/03-payment-booking.png) | [PlantUML](diagrams/03-payment-booking.puml) |
+| ER-диаграмма | Модель данных (таблицы и связи) | [PNG](diagrams/er-diagram.png) | [draw.io](diagrams/er-diagram.drawio) |
 
 
 ## Инструменты, которые использовались
@@ -47,4 +47,5 @@
 Если у вас есть вопросы или предложения, свяжитесь со мной:
 - Telegram: [@GulinaEvg](https://t.me/GulinaEvg)
 - Email: evg_gulina@mail.ru
+
 - Телефон: +7 (926) 245-24-62
