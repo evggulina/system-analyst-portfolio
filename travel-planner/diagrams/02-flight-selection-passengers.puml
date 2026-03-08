@@ -1,0 +1,47 @@
+@startuml
+autonumber
+title Диаграмма 2: Выбор рейса и заполнение данных пассажиров
+
+actor Участник
+box Frontend
+participant "Frontend" as FE
+end box
+box Backend #gold
+participant "Backend" as BE
+end box
+box  Provider #lightblue
+participant "Провайдер" as Provider
+end box
+
+== Выбор рейса и получение деталей ==
+
+Участник -> FE: Выбор рейса
+activate FE
+FE -> BE: Запрос деталей рейса
+activate BE
+note right: Провайдер определяется по выбранному рейсу (поле provider)
+
+BE -> Provider: Запрос деталей и тарифов
+note right: Тот же провайдер, что при поиске
+activate Provider
+Provider --> BE: Детали рейса
+deactivate Provider
+
+BE --> FE: Полная информация о рейсе (provider сохраняется)
+deactivate BE
+FE --> Участник: Подтверждение выбора
+deactivate FE
+
+== Заполнение данных пассажиров ==
+
+Участник -> FE: Ввод данных пассажиров
+activate FE
+FE -> BE: Запрос на сохранение пассажиров
+activate BE
+note right: В запросе передаётся provider
+BE -> BE: Валидация, сохранение provider в БД
+BE --> FE: Подтверждение
+deactivate BE
+FE --> Участник: Переход к оплате
+deactivate FE
+@enduml

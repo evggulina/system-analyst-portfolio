@@ -1,0 +1,69 @@
+@startuml
+autonumber
+title Диаграмма 3: Оплата и финальное бронирование (с обработкой ошибки)
+
+actor Участник
+box Frontend #lightgrey
+participant "Frontend" as FE
+end box
+box Backend #gold
+participant "Backend" as BE
+end box
+box PG #aquamarine
+participant "Платёжный шлюз" as PG
+end box
+box Provider #lightblue
+participant "Провайдер" as Provider
+end box
+
+== Оплата ==
+
+Участник -> FE: Подтверждение оплаты
+activate FE
+FE -> BE: Запрос на создание платежа
+activate BE
+BE -> PG: Создание платежа
+activate PG
+PG --> BE: Ссылка на оплату
+deactivate PG
+BE --> FE: Ссылка на оплату
+deactivate BE
+FE --> Участник: Перенаправление на оплату
+deactivate FE
+
+PG -> PG: Обработка платежа
+activate PG
+
+alt #lightgreen Платёж успешен 
+  PG --> BE: Webhook об успехе платежа
+  deactivate PG
+
+  == Финальное бронирование ==
+
+  activate BE
+  BE -> Provider: Запрос на бронирование (с указанием provider)
+  note right: Провайдер тот же, что был при поиске
+  activate Provider
+  Provider --> BE: Подтверждение бронирования (номер брони)
+  deactivate Provider
+
+  BE -> BE: Обновление статуса, отправка уведомлений
+  BE --> FE: Уведомление об успехе
+  activate FE
+  deactivate BE
+  FE --> Участник: Поездка подтверждена
+  deactivate FE
+
+else #Pink Платёж отклонён или ошибка
+  PG --> BE: Webhook об ошибке платежа
+  deactivate PG
+
+  activate BE
+  BE -> BE: Обновление статуса платежа (failed)
+  BE --> FE: Уведомление об ошибке оплаты
+  activate FE
+  deactivate BE
+  FE --> Участник: Сообщение об ошибке, предложение повторить
+  deactivate FE
+end
+@enduml
