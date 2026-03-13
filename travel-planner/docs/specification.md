@@ -19,7 +19,7 @@
 9. [Приложения](#9-приложения)  
 
 ---
-<a name="1-обзор-системы"></a>
+
 ## 1. Обзор системы
 
 ### 1.1 Назначение системы
@@ -368,4 +368,5 @@ POST /api/v1/children/child_456/link
 - **Элемент:** proposed, voting, approved, booked, cancelled, conflict
 
 - **Поездка:** draft, planning, confirmed, booking, booked, active, completed, cancelled
+
 
