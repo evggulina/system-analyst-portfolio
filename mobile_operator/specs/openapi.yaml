@@ -1,0 +1,1519 @@
+openapi: 3.0.1
+info:
+  title: API мобильного приложения оператора связи
+  description: |
+    API для мобильного приложения оператора сотовой связи (MVP).
+    ## Основные возможности:
+    - Авторизация по номеру телефона с SMS-подтверждением
+    - Повторный вход по биометрии (Face ID / Touch ID)
+    - Просмотр баланса и остатков пакетов
+    - Управление тарифами и дополнительными опциями
+    - Пополнение счёта банковской картой
+    - Настройка push-уведомлений
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@mobile-operator.ru
+servers:
+  - url: http://localhost:8080/api
+    description: Сервер разработки
+  - url: https://api.mobile-operator.ru/v1
+    description: Production server
+tags:
+  - name: Авторизация
+    description: Вход, биометрия, выход из аккаунта
+  - name: Баланс
+    description: Просмотр баланса и остатков пакетов
+  - name: Тарифы
+    description: Просмотр и смена тарифов
+  - name: Опции
+    description: Управление дополнительными опциями
+  - name: Платежи
+    description: Пополнение счёта через платёжный шлюз
+  - name: Уведомления
+    description: Настройки push-уведомлений
+paths:
+  /auth/sms/send:
+    post:
+      tags:
+        - Авторизация
+      summary: Отправить SMS-код для авторизации
+      description: |
+        Отправляет одноразовый SMS-код на указанный номер телефона.
+        Перед отправкой проверяется наличие действующего договора в Биллинге.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthRequest'
+            examples:
+              valid_phone:
+                summary: Корректный номер
+                value:
+                  phoneNumber: "+79991234567"
+      responses:
+        '200':
+          description: SMS-код успешно отправлен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SmsSentResponse'
+              examples:
+                success:
+                  summary: Код отправлен
+                  value:
+                    message: "SMS-код отправлен"
+                    expiresIn: 300
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          description: Договор на указанный номер не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                contract_not_found:
+                  summary: Договор не найден
+                  value:
+                    error: "Договор на указанный номер не найден"
+                    code: "CONTRACT_NOT_FOUND"
+                    details:
+                      - field: "phoneNumber"
+                        message: "Обратитесь в салон связи"
+        '429':
+          $ref: '#/components/responses/429'
+        '503':
+          description: SMS-шлюз недоступен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                sms_gateway_error:
+                  summary: Ошибка шлюза
+                  value:
+                    error: "Не удалось отправить код"
+                    code: "SMS_GATEWAY_ERROR"
+                    details:
+                      - field: "sms_service"
+                        message: "Попробуйте позже"
+
+  /auth/sms/verify:
+    post:
+      tags:
+        - Авторизация
+      summary: Подтвердить SMS-код и получить токен
+      description: |
+        Проверяет введённый SMS-код и возвращает JWT-токен авторизации.
+        При трёх неверных попытках операция блокируется на 15 минут.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SmsVerifyRequest'
+            examples:
+              valid_code:
+                summary: Корректный код
+                value:
+                  phoneNumber: "+79991234567"
+                  code: "123456"
+      responses:
+        '200':
+          description: Успешная авторизация
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+              examples:
+                success:
+                  summary: Успешный вход
+                  value:
+                    accessToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+                    refreshToken: "dGhpcyBpcyBhIHJlZnJlc2ggdG9rZW4gZXhhbXBsZQ=="
+                    expiresIn: 86400
+                    subscriber:
+                      id: "123e4567-e89b-12d3-a456-426614174000"
+                      phoneNumber: "+79991234567"
+                      regionId: "111e4567-e89b-12d3-a456-426614174001"
+                      currentTariffId: "222e4567-e89b-12d3-a456-426614174002"
+                      registrationDate: "2023-01-15T10:30:00Z"
+                      status: "active"
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          description: Неверный код или код истёк
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                invalid_code:
+                  summary: Неверный код
+                  value:
+                    error: "Неверный код"
+                    code: "INVALID_CODE"
+                    details:
+                      - field: "code"
+                        message: "Осталось попыток: 2"
+                code_expired:
+                  summary: Код истёк
+                  value:
+                    error: "Код истёк"
+                    code: "CODE_EXPIRED"
+                    details:
+                      - field: "code"
+                        message: "Запросите новый код"
+        '429':
+          description: Превышено количество попыток
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                too_many_attempts:
+                  summary: Блокировка операции
+                  value:
+                    error: "Операция заблокирована на 15 минут"
+                    code: "TOO_MANY_ATTEMPTS"
+                    details:
+                      - field: "code"
+                        message: "Превышено количество попыток ввода"
+
+  /auth/biometric/verify:
+    post:
+      tags:
+        - Авторизация
+      summary: Войти по биометрии
+      description: |
+        Авторизация по биометрии (Face ID / Touch ID).
+        Используется для повторных входов после первичной авторизации по SMS.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BiometricRequest'
+            examples:
+              biometric_token:
+                summary: Токен биометрии
+                value:
+                  biometricToken: "biometric_token_example_12345"
+      responses:
+        '200':
+          description: Успешная авторизация
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+              examples:
+                success:
+                  summary: Успешный вход по биометрии
+                  value:
+                    accessToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+                    refreshToken: "dGhpcyBpcyBhIHJlZnJlc2ggdG9rZW4gZXhhbXBsZQ=="
+                    expiresIn: 86400
+                    subscriber:
+                      id: "123e4567-e89b-12d3-a456-426614174000"
+                      phoneNumber: "+79991234567"
+                      regionId: "111e4567-e89b-12d3-a456-426614174001"
+                      currentTariffId: "222e4567-e89b-12d3-a456-426614174002"
+                      registrationDate: "2023-01-15T10:30:00Z"
+                      status: "active"
+        '401':
+          description: Биометрия не распознана
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                biometric_failed:
+                  summary: Ошибка биометрии
+                  value:
+                    error: "Биометрия не распознана"
+                    code: "BIOMETRIC_FAILED"
+                    details:
+                      - field: "biometricToken"
+                        message: "Попробуйте снова или войдите по SMS"
+
+  /auth/logout:
+    post:
+      tags:
+        - Авторизация
+      summary: Выйти из аккаунта
+      description: |
+        Завершает авторизованное состояние и отзывает токен на сервере.
+      responses:
+        '200':
+          description: Успешный выход
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogoutResponse'
+              examples:
+                success:
+                  summary: Выход выполнен
+                  value:
+                    message: "Выход выполнен успешно"
+        '401':
+          $ref: '#/components/responses/401'
+        '500':
+          $ref: '#/components/responses/500'
+
+  /balance:
+    get:
+      tags:
+        - Баланс
+      summary: Получить баланс и остатки пакетов
+      description: |
+        Возвращает текущий баланс и остатки минут, SMS и гигабайт.
+        При отсутствии интернета возвращает кэшированные данные (не старше 1 часа).
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceResponse'
+              examples:
+                success:
+                  summary: Баланс и остатки
+                  value:
+                    balance:
+                      amount: 250.50
+                      currency: "RUB"
+                      updatedAt: "2026-06-15T14:30:00Z"
+                    packageUsage:
+                      minutesUsed: 150
+                      minutesTotal: 300
+                      smsUsed: 20
+                      smsTotal: 100
+                      gbUsed: 5.5
+                      gbTotal: 10.0
+                      periodStart: "2026-06-01T00:00:00Z"
+                      periodEnd: "2026-06-30T23:59:59Z"
+                    isCached: false
+                    cachedAt: null
+                    isRoaming: false
+                cached:
+                  summary: Кэшированные данные
+                  value:
+                    balance:
+                      amount: 250.50
+                      currency: "RUB"
+                      updatedAt: "2026-06-15T13:30:00Z"
+                    packageUsage:
+                      minutesUsed: 150
+                      minutesTotal: 300
+                      smsUsed: 20
+                      smsTotal: 100
+                      gbUsed: 5.5
+                      gbTotal: 10.0
+                      periodStart: "2026-06-01T00:00:00Z"
+                      periodEnd: "2026-06-30T23:59:59Z"
+                    isCached: true
+                    cachedAt: "2026-06-15T13:30:00Z"
+                    isRoaming: false
+        '401':
+          $ref: '#/components/responses/401'
+        '500':
+          $ref: '#/components/responses/500'
+
+  /tariffs:
+    get:
+      tags:
+        - Тарифы
+      summary: Получить список доступных тарифов
+      description: |
+        Возвращает список тарифов, доступных для смены, с учётом региона абонента.
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+            example: 10
+          description: Количество тарифов на странице
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+            example: 0
+          description: Смещение для пагинации
+      responses:
+        '200':
+          description: Список тарифов
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TariffListResponse'
+              examples:
+                success:
+                  summary: Список тарифов
+                  value:
+                    tariffs:
+                      - id: "222e4567-e89b-12d3-a456-426614174002"
+                        name: "Безлимитный"
+                        description: "Безлимитные минуты и интернет"
+                        monthlyFee: 500.00
+                        minutesPackage: null
+                        smsPackage: 100
+                        gbPackage: null
+                        regionScope: null
+                        isActive: true
+                        changeLimitDays: 30
+                        updatedAt: "2026-01-10T09:00:00Z"
+                      - id: "333e4567-e89b-12d3-a456-426614174003"
+                        name: "Разговорный"
+                        description: "Много минут для звонков"
+                        monthlyFee: 300.00
+                        minutesPackage: 500
+                        smsPackage: 50
+                        gbPackage: 5.0
+                        regionScope: null
+                        isActive: true
+                        changeLimitDays: 30
+                        updatedAt: "2026-01-10T09:00:00Z"
+        '401':
+          $ref: '#/components/responses/401'
+        '500':
+          $ref: '#/components/responses/500'
+
+  /tariffs/{tariffId}:
+    get:
+      tags:
+        - Тарифы
+      summary: Получить детали тарифа
+      description: |
+        Возвращает полное описание тарифа, включая пакеты и ограничения.
+      parameters:
+        - name: tariffId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: "222e4567-e89b-12d3-a456-426614174002"
+      responses:
+        '200':
+          description: Детали тарифа
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TariffDetail'
+              examples:
+                success:
+                  summary: Детали тарифа
+                  value:
+                    id: "222e4567-e89b-12d3-a456-426614174002"
+                    name: "Безлимитный"
+                    description: "Безлимитные минуты и интернет"
+                    monthlyFee: 500.00
+                    minutesPackage: null
+                    smsPackage: 100
+                    gbPackage: null
+                    regionScope: null
+                    isActive: true
+                    changeLimitDays: 30
+                    updatedAt: "2026-01-10T09:00:00Z"
+                    availableOptions:
+                      - id: "444e4567-e89b-12d3-a456-426614174004"
+                        name: "Антиспам"
+                        description: "Блокировка спам-звонков"
+                        activationFee: 0.00
+                        monthlyPrice: 50.00
+                        cancellationType: "immediate"
+                        isPaid: true
+                        isMandatory: false
+                        updatedAt: "2026-01-10T09:00:00Z"
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '500':
+          $ref: '#/components/responses/500'
+
+  /tariffs/change:
+    post:
+      tags:
+        - Тарифы
+      summary: Сменить тариф
+      description: |
+        Изменяет тариф абонента после подтверждения по SMS.
+        Требуется двухфакторная аутентификация.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TariffChangeRequest'
+            examples:
+              change_tariff:
+                summary: Смена тарифа
+                value:
+                  tariffId: "333e4567-e89b-12d3-a456-426614174003"
+                  confirmSmsCode: "654321"
+      responses:
+        '200':
+          description: Тариф успешно изменён
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TariffChangeResponse'
+              examples:
+                success:
+                  summary: Тариф изменён
+                  value:
+                    message: "Тариф успешно изменён"
+                    newTariff:
+                      id: "333e4567-e89b-12d3-a456-426614174003"
+                      name: "Разговорный"
+                      description: "Много минут для звонков"
+                      monthlyFee: 300.00
+                      minutesPackage: 500
+                      smsPackage: 50
+                      gbPackage: 5.0
+                      regionScope: null
+                      isActive: true
+                      changeLimitDays: 30
+                      updatedAt: "2026-06-15T14:30:00Z"
+        '400':
+          $ref: '#/components/responses/400'
+        '402':
+          description: Недостаточно средств
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                insufficient_funds:
+                  summary: Недостаточно средств
+                  value:
+                    error: "Недостаточно средств для перехода"
+                    code: "INSUFFICIENT_FUNDS"
+                    details:
+                      - field: "balance"
+                        message: "Пополните счёт"
+        '409':
+          description: Ограничение частоты смены тарифа
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                rate_limit:
+                  summary: Лимит смены тарифа
+                  value:
+                    error: "Невозможно сменить тариф в текущий период"
+                    code: "TARIFF_CHANGE_LIMIT"
+                    details:
+                      - field: "tariffId"
+                        message: "Попробуйте через 30 дней"
+        '429':
+          $ref: '#/components/responses/429'
+
+  /options:
+    get:
+      tags:
+        - Опции
+      summary: Получить список доступных опций
+      description: |
+        Возвращает список опций, совместимых с текущим тарифом абонента.
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+            example: 10
+          description: Количество опций на странице
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+            example: 0
+          description: Смещение для пагинации
+      responses:
+        '200':
+          description: Список доступных опций
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OptionListResponse'
+              examples:
+                success:
+                  summary: Доступные опции
+                  value:
+                    options:
+                      - id: "444e4567-e89b-12d3-a456-426614174004"
+                        name: "Антиспам"
+                        description: "Блокировка спам-звонков"
+                        activationFee: 0.00
+                        monthlyPrice: 50.00
+                        cancellationType: "immediate"
+                        isPaid: true
+                        isMandatory: false
+                        updatedAt: "2026-01-10T09:00:00Z"
+                      - id: "555e4567-e89b-12d3-a456-426614174005"
+                        name: "Роуминг День"
+                        description: "Пакет на день в роуминге"
+                        activationFee: 100.00
+                        monthlyPrice: 0.00
+                        cancellationType: "delayed"
+                        isPaid: true
+                        isMandatory: false
+                        updatedAt: "2026-01-10T09:00:00Z"
+        '401':
+          $ref: '#/components/responses/401'
+        '500':
+          $ref: '#/components/responses/500'
+
+  /options/{optionId}:
+    get:
+      tags:
+        - Опции
+      summary: Получить карточку опции
+      description: |
+        Возвращает полное описание опции для ознакомления перед подключением.
+      parameters:
+        - name: optionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: "444e4567-e89b-12d3-a456-426614174004"
+      responses:
+        '200':
+          description: Карточка опции
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OptionDetail'
+              examples:
+                success:
+                  summary: Детали опции
+                  value:
+                    id: "444e4567-e89b-12d3-a456-426614174004"
+                    name: "Антиспам"
+                    description: "Блокировка спам-звонков и SMS"
+                    activationFee: 0.00
+                    monthlyPrice: 50.00
+                    cancellationType: "immediate"
+                    cancellationTerms: "Отключается мгновенно в любой момент"
+                    isPaid: true
+                    isMandatory: false
+                    updatedAt: "2026-01-10T09:00:00Z"
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+
+  /options/active:
+    get:
+      tags:
+        - Опции
+      summary: Получить список подключённых опций
+      description: |
+        Возвращает список активных опций абонента с датами активации.
+      responses:
+        '200':
+          description: Список активных опций
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActiveOptionListResponse'
+              examples:
+                success:
+                  summary: Подключённые опции
+                  value:
+                    options:
+                      - id: "444e4567-e89b-12d3-a456-426614174004"
+                        name: "Антиспам"
+                        description: "Блокировка спам-звонков"
+                        activationFee: 0.00
+                        monthlyPrice: 50.00
+                        cancellationType: "immediate"
+                        isPaid: true
+                        isMandatory: false
+                        updatedAt: "2026-01-10T09:00:00Z"
+                        activatedAt: "2026-05-01T10:00:00Z"
+                        deactivatedAt: null
+                        status: "active"
+        '401':
+          $ref: '#/components/responses/401'
+        '500':
+          $ref: '#/components/responses/500'
+
+  /options/activate:
+    post:
+      tags:
+        - Опции
+      summary: Подключить опцию
+      description: |
+        Подключает выбранную опцию. Для платных опций требуется подтверждение по SMS.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OptionActivateRequest'
+            examples:
+              activate_paid:
+                summary: Подключение платной опции
+                value:
+                  optionId: "444e4567-e89b-12d3-a456-426614174004"
+                  confirmSmsCode: "789012"
+              activate_free:
+                summary: Подключение бесплатной опции
+                value:
+                  optionId: "666e4567-e89b-12d3-a456-426614174006"
+      responses:
+        '200':
+          description: Опция подключена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OptionActivateResponse'
+              examples:
+                success:
+                  summary: Опция подключена
+                  value:
+                    message: "Опция успешно подключена"
+                    optionName: "Антиспам"
+        '400':
+          $ref: '#/components/responses/400'
+        '402':
+          description: Недостаточно средств
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                insufficient_funds:
+                  summary: Недостаточно средств
+                  value:
+                    error: "Недостаточно средств для подключения"
+                    code: "INSUFFICIENT_FUNDS"
+                    details:
+                      - field: "balance"
+                        message: "Пополните счёт"
+        '409':
+          description: Опция несовместима с тарифом
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                incompatible:
+                  summary: Несовместимость
+                  value:
+                    error: "Опция несовместима с текущим тарифом"
+                    code: "OPTION_INCOMPATIBLE"
+                    details:
+                      - field: "optionId"
+                        message: "Выберите другую опцию"
+        '429':
+          $ref: '#/components/responses/429'
+
+  /options/deactivate/{optionId}:
+    post:
+      tags:
+        - Опции
+      summary: Отключить опцию
+      description: |
+        Отключает активную опцию.
+      parameters:
+        - name: optionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            example: "444e4567-e89b-12d3-a456-426614174004"
+      responses:
+        '200':
+          description: Опция отключена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OptionDeactivateResponse'
+              examples:
+                success:
+                  summary: Опция отключена
+                  value:
+                    message: "Опция успешно отключена"
+                    optionName: "Антиспам"
+        '400':
+          $ref: '#/components/responses/400'
+        '404':
+          $ref: '#/components/responses/404'
+        '409':
+          description: Опция обязательна для отключения
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                mandatory:
+                  summary: Обязательная опция
+                  value:
+                    error: "Опция является обязательной и не подлежит отключению"
+                    code: "MANDATORY_OPTION"
+                    details:
+                      - field: "optionId"
+                        message: "Невозможно отключить обязательную опцию"
+
+  /payments:
+    post:
+      tags:
+        - Платежи
+      summary: Инициировать пополнение счёта
+      description: |
+        Создаёт платёж и возвращает ссылку для оплаты через платёжный шлюз.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentRequest'
+            examples:
+              payment_card:
+                summary: Пополнение картой
+                value:
+                  amount: 500.00
+                  paymentMethod: "card"
+      responses:
+        '200':
+          description: Платёж инициирован, получена ссылка на шлюз
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+              examples:
+                success:
+                  summary: Платёж создан
+                  value:
+                    id: "777e4567-e89b-12d3-a456-426614174007"
+                    amount: 500.00
+                    status: "initiated"
+                    paymentMethod: "card"
+                    paymentUrl: "https://payment-gateway.example/pay/abc123"
+                    createdAt: "2026-06-15T14:30:00Z"
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '500':
+          $ref: '#/components/responses/500'
+
+  /payments/{paymentId}:
+    get:
+      tags:
+        - Платежи
+      summary: Получение статуса платежа
+      description: |
+        Возвращает полную информацию о платеже, включая его текущий статус.
+        Используется клиентом для проверки результата операции, если webhook от платёжного шлюза задерживается.
+      parameters:
+        - name: paymentId
+          in: path
+          required: true
+          description: Уникальный идентификатор платежа
+          schema:
+            type: string
+            format: uuid
+            example: "777e4567-e89b-12d3-a456-426614174007"
+      responses:
+        '200':
+          description: Информация о платеже успешно получена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+              examples:
+                success:
+                  summary: Платеж успешно зачислен
+                  value:
+                    id: "777e4567-e89b-12d3-a456-426614174007"
+                    amount: 500.00
+                    status: "success"
+                    paymentMethod: "card"
+                    paymentUrl: null
+                    gatewayTransactionId: "gateway_txn_123456"
+                    createdAt: "2026-06-15T14:30:00Z"
+                    confirmedAt: "2026-06-15T14:32:00Z"
+                initiated:
+                  summary: Платеж в процессе обработки
+                  value:
+                    id: "777e4567-e89b-12d3-a456-426614174007"
+                    amount: 500.00
+                    status: "initiated"
+                    paymentMethod: "card"
+                    paymentUrl: null
+                    gatewayTransactionId: null
+                    createdAt: "2026-06-15T14:30:00Z"
+                    confirmedAt: null
+        '401':
+          $ref: '#/components/responses/401'
+        '404':
+          $ref: '#/components/responses/404'
+        '500':
+          $ref: '#/components/responses/500'
+
+  /notifications/settings:
+    get:
+      tags:
+        - Уведомления
+      summary: Получить настройки push-уведомлений
+      description: |
+        Возвращает текущие настройки push-уведомлений абонента.
+      responses:
+        '200':
+          description: Настройки уведомлений
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationSettings'
+              examples:
+                success:
+                  summary: Настройки уведомлений
+                  value:
+                    notifyLowBalance: true
+                    notifyPackageEnd: true
+                    notifyPromotions: false
+                    balanceThreshold: 100.00
+                    packageThresholdPercent: 10
+        '401':
+          $ref: '#/components/responses/401'
+        '500':
+          $ref: '#/components/responses/500'
+    put:
+      tags:
+        - Уведомления
+      summary: Обновить настройки push-уведомлений
+      description: |
+        Обновляет предпочтения по push-уведомлениям.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationSettings'
+            examples:
+              update_settings:
+                summary: Обновление настроек
+                value:
+                  notifyLowBalance: true
+                  notifyPackageEnd: true
+                  notifyPromotions: false
+                  balanceThreshold: 150.00
+                  packageThresholdPercent: 15
+      responses:
+        '200':
+          description: Настройки обновлены
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationSettingsResponse'
+              examples:
+                success:
+                  summary: Настройки сохранены
+                  value:
+                    message: "Настройки успешно сохранены"
+        '400':
+          $ref: '#/components/responses/400'
+        '401':
+          $ref: '#/components/responses/401'
+        '500':
+          $ref: '#/components/responses/500'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT-токен, полученный при авторизации (срок жизни 24 часа)
+  schemas:
+    AuthRequest:
+      type: object
+      required:
+        - phoneNumber
+      properties:
+        phoneNumber:
+          type: string
+          pattern: '^\+7\d{10}$'
+          example: "+79991234567"
+          description: Номер телефона в формате +7XXXXXXXXXX
+    SmsSentResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "SMS-код отправлен"
+        expiresIn:
+          type: integer
+          example: 300
+          description: Время жизни кода в секундах
+    SmsVerifyRequest:
+      type: object
+      required:
+        - phoneNumber
+        - code
+      properties:
+        phoneNumber:
+          type: string
+          example: "+79991234567"
+        code:
+          type: string
+          minLength: 4
+          maxLength: 6
+          example: "123456"
+          description: Одноразовый SMS-код
+    BiometricRequest:
+      type: object
+      required:
+        - biometricToken
+      properties:
+        biometricToken:
+          type: string
+          example: "biometric_token_example_12345"
+          description: Токен биометрической аутентификации, сгенерированный ОС устройства
+    AuthResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+        refreshToken:
+          type: string
+          example: "dGhpcyBpcyBhIHJlZnJlc2ggdG9rZW4gZXhhbXBsZQ=="
+        expiresIn:
+          type: integer
+          example: 86400
+          description: Время жизни токена в секундах
+        subscriber:
+          $ref: '#/components/schemas/Subscriber'
+    Subscriber:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        phoneNumber:
+          type: string
+          example: "+79991234567"
+        regionId:
+          type: string
+          format: uuid
+          example: "111e4567-e89b-12d3-a456-426614174001"
+        currentTariffId:
+          type: string
+          format: uuid
+          example: "222e4567-e89b-12d3-a456-426614174002"
+        registrationDate:
+          type: string
+          format: date-time
+          example: "2023-01-15T10:30:00Z"
+        status:
+          type: string
+          enum:
+            - active
+            - blocked
+            - suspended
+          example: "active"
+    LogoutResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Выход выполнен успешно"
+    Balance:
+      type: object
+      properties:
+        amount:
+          type: number
+          format: double
+          example: 250.50
+        currency:
+          type: string
+          example: "RUB"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2026-06-15T14:30:00Z"
+    PackageUsage:
+      type: object
+      properties:
+        minutesUsed:
+          type: integer
+          example: 150
+        minutesTotal:
+          type: integer
+          nullable: true
+          example: 300
+          description: NULL = безлимит
+        smsUsed:
+          type: integer
+          example: 20
+        smsTotal:
+          type: integer
+          nullable: true
+          example: 100
+          description: NULL = безлимит
+        gbUsed:
+          type: number
+          format: double
+          example: 5.5
+        gbTotal:
+          type: number
+          format: double
+          nullable: true
+          example: 10.0
+          description: NULL = безлимит
+        periodStart:
+          type: string
+          format: date-time
+          example: "2026-06-01T00:00:00Z"
+        periodEnd:
+          type: string
+          format: date-time
+          example: "2026-06-30T23:59:59Z"
+    BalanceResponse:
+      type: object
+      properties:
+        balance:
+          $ref: '#/components/schemas/Balance'
+        packageUsage:
+          $ref: '#/components/schemas/PackageUsage'
+        isCached:
+          type: boolean
+          example: false
+          description: Флаг - возвращены ли кэшированные данные
+        cachedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: null
+        isRoaming:
+          type: boolean
+          example: false
+    Tariff:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "222e4567-e89b-12d3-a456-426614174002"
+        name:
+          type: string
+          example: "Безлимитный"
+        description:
+          type: string
+          nullable: true
+          example: "Безлимитные минуты и интернет"
+        monthlyFee:
+          type: number
+          format: double
+          example: 500.00
+        minutesPackage:
+          type: integer
+          nullable: true
+          example: null
+          description: NULL = безлимит
+        smsPackage:
+          type: integer
+          nullable: true
+          example: 100
+        gbPackage:
+          type: number
+          format: double
+          nullable: true
+          example: null
+          description: NULL = безлимит
+        regionScope:
+          type: string
+          nullable: true
+          example: null
+          description: NULL = все регионы
+        isActive:
+          type: boolean
+          example: true
+        changeLimitDays:
+          type: integer
+          nullable: true
+          example: 30
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2026-01-10T09:00:00Z"
+    TariffListResponse:
+      type: object
+      properties:
+        tariffs:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tariff'
+    TariffDetail:
+      allOf:
+        - $ref: '#/components/schemas/Tariff'
+        - type: object
+          properties:
+            availableOptions:
+              type: array
+              items:
+                $ref: '#/components/schemas/Option'
+    Option:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "444e4567-e89b-12d3-a456-426614174004"
+        name:
+          type: string
+          example: "Антиспам"
+        description:
+          type: string
+          example: "Блокировка спам-звонков"
+        activationFee:
+          type: number
+          format: double
+          nullable: true
+          example: 0.00
+        monthlyPrice:
+          type: number
+          format: double
+          nullable: true
+          example: 50.00
+        cancellationType:
+          type: string
+          enum:
+            - immediate
+            - delayed
+            - with_fee
+          example: "immediate"
+        isPaid:
+          type: boolean
+          example: true
+        isMandatory:
+          type: boolean
+          example: false
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2026-01-10T09:00:00Z"
+    OptionDetail:
+      allOf:
+        - $ref: '#/components/schemas/Option'
+        - type: object
+          properties:
+            cancellationTerms:
+              type: string
+              nullable: true
+              example: "Отключается мгновенно в любой момент"
+    OptionListResponse:
+      type: object
+      properties:
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/Option'
+    ActiveOption:
+      allOf:
+        - $ref: '#/components/schemas/Option'
+        - type: object
+          properties:
+            activatedAt:
+              type: string
+              format: date-time
+              example: "2026-05-01T10:00:00Z"
+            deactivatedAt:
+              type: string
+              format: date-time
+              nullable: true
+              example: null
+            status:
+              type: string
+              enum:
+                - active
+                - inactive
+                - pending_deactivation
+              example: "active"
+    ActiveOptionListResponse:
+      type: object
+      properties:
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActiveOption'
+    TariffChangeRequest:
+      type: object
+      required:
+        - tariffId
+        - confirmSmsCode
+      properties:
+        tariffId:
+          type: string
+          format: uuid
+          example: "333e4567-e89b-12d3-a456-426614174003"
+        confirmSmsCode:
+          type: string
+          minLength: 4
+          maxLength: 6
+          example: "654321"
+    TariffChangeResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Тариф успешно изменён"
+        newTariff:
+          $ref: '#/components/schemas/Tariff'
+    OptionActivateRequest:
+      type: object
+      required:
+        - optionId
+      properties:
+        optionId:
+          type: string
+          format: uuid
+          example: "444e4567-e89b-12d3-a456-426614174004"
+        confirmSmsCode:
+          type: string
+          minLength: 4
+          maxLength: 6
+          example: "789012"
+          description: Только для платных опций
+    OptionActivateResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Опция успешно подключена"
+        optionName:
+          type: string
+          example: "Антиспам"
+    OptionDeactivateResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Опция успешно отключена"
+        optionName:
+          type: string
+          example: "Антиспам"
+    PaymentRequest:
+      type: object
+      required:
+        - amount
+        - paymentMethod
+      properties:
+        amount:
+          type: number
+          format: double
+          minimum: 10
+          maximum: 15000
+          example: 500.00
+        paymentMethod:
+          type: string
+          enum:
+            - card
+          example: "card"
+    PaymentResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "777e4567-e89b-12d3-a456-426614174007"
+        amount:
+          type: number
+          format: double
+          example: 500.00
+        status:
+          type: string
+          enum:
+            - initiated
+            - success
+            - declined
+            - refunded
+          example: "initiated"
+        paymentMethod:
+          type: string
+          example: "card"
+        paymentUrl:
+          type: string
+          format: uri
+          nullable: true
+          example: "https://payment-gateway.example/pay/abc123"
+        gatewayTransactionId:
+          type: string
+          nullable: true
+          example: "gateway_txn_123456"
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-06-15T14:30:00Z"
+        confirmedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-06-15T14:32:00Z"
+    NotificationSettings:
+      type: object
+      properties:
+        notifyLowBalance:
+          type: boolean
+          example: true
+        notifyPackageEnd:
+          type: boolean
+          example: true
+        notifyPromotions:
+          type: boolean
+          example: false
+        balanceThreshold:
+          type: number
+          format: double
+          example: 100.00
+          description: Порог для уведомления о низком балансе (RUB)
+        packageThresholdPercent:
+          type: integer
+          example: 10
+          description: Порог остатка пакета в процентах для уведомления
+    NotificationSettingsResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Настройки успешно сохранены"
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Validation failed"
+        code:
+          type: string
+          example: "INVALID_PHONE"
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+                example: "phoneNumber"
+              message:
+                type: string
+                example: "Некорректный формат номера"
+  responses:
+    '400':
+      description: Некорректный запрос (ошибка валидации)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_phone:
+              summary: Неверный формат телефона
+              value:
+                error: "Некорректный формат номера"
+                code: "INVALID_PHONE"
+                details:
+                  - field: "phoneNumber"
+                    message: "Номер должен быть в формате +7XXXXXXXXXX"
+            invalid_amount:
+              summary: Неверная сумма
+              value:
+                error: "Сумма вне допустимого диапазона"
+                code: "INVALID_AMOUNT"
+                details:
+                  - field: "amount"
+                    message: "Сумма должна быть от 10 до 15000 рублей"
+    '401':
+      description: Отсутствует или недействителен токен авторизации
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unauthorized:
+              summary: Неавторизован
+              value:
+                error: "Требуется авторизация"
+                code: "UNAUTHORIZED"
+                details:
+                  - field: "Authorization"
+                    message: "Токен отсутствует или истёк"
+    '404':
+      description: Ресурс не найден
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_found:
+              summary: Ресурс не найден
+              value:
+                error: "Ресурс не найден"
+                code: "NOT_FOUND"
+                details:
+                  - field: "id"
+                    message: "Запись с указанным ID не существует"
+    '409':
+      description: Конфликт (например, недопустимое состояние)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            conflict:
+              summary: Конфликт
+              value:
+                error: "Конфликт данных"
+                code: "CONFLICT"
+                details:
+                  - field: "resource"
+                    message: "Ресурс находится в недопустимом состоянии"
+    '429':
+      description: Превышен лимит запросов
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limit:
+              summary: Слишком много запросов
+              value:
+                error: "Превышен лимит запросов"
+                code: "RATE_LIMIT_EXCEEDED"
+                details:
+                  - field: "request"
+                    message: "Попробуйте позже"
+    '500':
+      description: Внутренняя ошибка сервера
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            internal_error:
+              summary: Ошибка сервера
+              value:
+                error: "Внутренняя ошибка сервера"
+                code: "INTERNAL_SERVER_ERROR"
+                details:
+                  - field: "server"
+                    message: "Попробуйте позже"
+security:
+  - BearerAuth: []
