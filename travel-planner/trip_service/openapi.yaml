@@ -1,0 +1,1147 @@
+openapi: 3.0.1
+info:
+  title: Trip Service API
+  description: |
+    API микросервиса Trip Service системы TravelTech. 
+    
+    Управление поездками, участниками, элементами плана (рейсы, отели, активности), 
+    синхронизация офлайн-изменений и координация оплаты и бронирования.
+    
+    **Авторизация:**
+    Все защищённые эндпоинты требуют JWT-токен в заголовке `Authorization: Bearer <token>`.
+    Токен выдаётся User Service при авторизации пользователя.
+  version: 1.0.0
+  contact:
+    name: Гулина Е.А.
+    email: gulina@example.com
+
+servers:
+  - url: https://api.traveltech.example/v1
+    description: Production server
+  - url: http://localhost:8080/api/v1
+    description: Local development
+
+tags:
+  - name: Trips
+    description: Управление поездками
+  - name: Participants
+    description: Управление участниками поездок
+  - name: Sync
+    description: Синхронизация офлайн-изменений
+  - name: Bookings
+    description: Элементы плана (рейсы, отели, активности)
+  - name: Children
+    description: Управление детьми в поездке
+  - name: Conflicts
+    description: Разрешение конфликтов
+  - name: Payments
+    description: Оплата элементов поездки
+
+paths:
+  /trips:
+    post:
+      tags: [Trips]
+      summary: Создать поездку
+      description: |
+        Создание новой поездки. Создатель автоматически становится организатором.
+        В рамках одной поездки может быть только один организатор.
+      operationId: createTrip
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTripRequest'
+      responses:
+        '201':
+          description: Поездка успешно создана
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trip'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    get:
+      tags: [Trips]
+      summary: Получить список поездок пользователя
+      operationId: getUserTrips
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [draft, planning, confirmed, booking, booked, active, completed, cancelled]
+          description: Фильтр по статусу поездки
+      responses:
+        '200':
+          description: Список поездок
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Trip'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /trips/{tripId}:
+    parameters:
+      - $ref: '#/components/parameters/TripId'
+    
+    get:
+      tags: [Trips]
+      summary: Получить данные поездки
+      operationId: getTrip
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Данные поездки
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trip'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    
+    patch:
+      tags: [Trips]
+      summary: Обновить поездку (только организатор)
+      operationId: updateTrip
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTripRequest'
+      responses:
+        '200':
+          description: Поездка обновлена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trip'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    
+    delete:
+      tags: [Trips]
+      summary: Удалить поездку (только организатор, только draft)
+      operationId: deleteTrip
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Поездка удалена
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /trips/{tripId}/participants:
+    parameters:
+      - $ref: '#/components/parameters/TripId'
+    
+    post:
+      tags: [Participants]
+      summary: Пригласить участника (только организатор)
+      operationId: addParticipant
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddParticipantRequest'
+      responses:
+        '201':
+          description: Участник добавлен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Participant'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /trips/{tripId}/participants/{participantId}:
+    parameters:
+      - $ref: '#/components/parameters/TripId'
+      - $ref: '#/components/parameters/ParticipantId'
+    
+    delete:
+      tags: [Participants]
+      summary: Удалить участника (организатор не может удалить себя)
+      operationId: removeParticipant
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Участник удалён
+        '403':
+          description: Организатор не может удалить себя
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /trips/{tripId}/sync:
+    parameters:
+      - $ref: '#/components/parameters/TripId'
+    
+    post:
+      tags: [Sync]
+      summary: Отправить пакет офлайн-изменений
+      description: |
+        Вызывается клиентским приложением **автоматически** при восстановлении 
+        интернет-соединения, без участия пользователя.
+      operationId: syncChanges
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncRequest'
+      responses:
+        '200':
+          description: Результат синхронизации
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '413':
+          description: Превышен лимит размера пакета
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /trips/{tripId}/changes:
+    parameters:
+      - $ref: '#/components/parameters/TripId'
+      - in: query
+        name: since
+        schema:
+          type: string
+          format: date-time
+        required: true
+        description: Timestamp последней синхронизации (ISO 8601)
+    
+    get:
+      tags: [Sync]
+      summary: Получить изменения с указанного timestamp
+      operationId: getChanges
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Список изменений
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Change'
+
+  /trips/{tripId}/flights:
+    parameters:
+      - $ref: '#/components/parameters/TripId'
+    
+    post:
+      tags: [Bookings]
+      summary: Добавить рейс
+      operationId: addFlight
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFlightRequest'
+      responses:
+        '201':
+          description: Рейс добавлен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlightBooking'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /trips/{tripId}/flights/{bookingId}:
+    parameters:
+      - $ref: '#/components/parameters/TripId'
+      - $ref: '#/components/parameters/BookingId'
+    
+    patch:
+      tags: [Bookings]
+      summary: Изменить рейс
+      operationId: updateFlight
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateFlightRequest'
+      responses:
+        '200':
+          description: Рейс обновлён
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlightBooking'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    
+    delete:
+      tags: [Bookings]
+      summary: Удалить рейс
+      operationId: deleteFlight
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Рейс удалён
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /trips/{tripId}/hotels:
+    parameters:
+      - $ref: '#/components/parameters/TripId'
+    
+    post:
+      tags: [Bookings]
+      summary: Добавить отель
+      operationId: addHotel
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateHotelRequest'
+      responses:
+        '201':
+          description: Отель добавлен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HotelBooking'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /trips/{tripId}/activities:
+    parameters:
+      - $ref: '#/components/parameters/TripId'
+    
+    post:
+      tags: [Bookings]
+      summary: Добавить активность
+      operationId: addActivity
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateActivityRequest'
+      responses:
+        '201':
+          description: Активность добавлена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivityBooking'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /trips/{tripId}/children:
+    parameters:
+      - $ref: '#/components/parameters/TripId'
+    
+    post:
+      tags: [Children]
+      summary: Добавить ребёнка
+      operationId: addChild
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateChildRequest'
+      responses:
+        '201':
+          description: Ребёнок добавлен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Child'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /children/{childId}:
+    parameters:
+      - in: path
+        name: childId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    
+    delete:
+      tags: [Children]
+      summary: Удалить ребёнка
+      operationId: deleteChild
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Ребёнок удалён
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /children/{childId}/link:
+    parameters:
+      - in: path
+        name: childId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    
+    post:
+      tags: [Children]
+      summary: Привязать ребёнка к бронированию
+      operationId: linkChildToBooking
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LinkChildRequest'
+      responses:
+        '200':
+          description: Ребёнок привязан
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /trips/{tripId}/conflicts:
+    parameters:
+      - $ref: '#/components/parameters/TripId'
+    
+    get:
+      tags: [Conflicts]
+      summary: Список конфликтов
+      operationId: getConflicts
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Список конфликтов
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Conflict'
+
+  /conflicts/{conflictId}/resolve:
+    parameters:
+      - in: path
+        name: conflictId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    
+    post:
+      tags: [Conflicts]
+      summary: Разрешить конфликт (только организатор)
+      operationId: resolveConflict
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveConflictRequest'
+      responses:
+        '200':
+          description: Конфликт разрешён
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /conflicts/{conflictId}/vote:
+    parameters:
+      - in: path
+        name: conflictId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    
+    post:
+      tags: [Conflicts]
+      summary: Проголосовать за вариант разрешения
+      operationId: voteConflict
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VoteConflictRequest'
+      responses:
+        '200':
+          description: Голос принят
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /payments:
+    post:
+      tags: [Payments]
+      summary: Инициация оплаты элементов поездки
+      operationId: initiatePayment
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePaymentRequest'
+      responses:
+        '201':
+          description: Платёж создан, ссылка на оплату
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '503':
+          description: Платёжная система недоступна
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT-токен, выданный User Service при авторизации.
+        Передаётся в заголовке: `Authorization: Bearer <token>`
+        
+        Время жизни токена: 24 часа.
+        Токен автоматически обновляется при активности пользователя.
+
+  parameters:
+    TripId:
+      in: path
+      name: tripId
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Уникальный идентификатор поездки
+    
+    ParticipantId:
+      in: path
+      name: participantId
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Уникальный идентификатор участника
+    
+    BookingId:
+      in: path
+      name: bookingId
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Уникальный идентификатор бронирования
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        code:
+          type: integer
+          description: HTTP код ошибки
+        message:
+          type: string
+          description: Сообщение об ошибке
+        details:
+          type: string
+          description: Дополнительные детали ошибки
+    
+    Trip:
+      type: object
+      properties:
+        tripId:
+          type: string
+          format: uuid
+        title:
+          type: string
+          minLength: 1
+          maxLength: 100
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+        status:
+          type: string
+          enum: [draft, planning, confirmed, booking, booked, active, completed, cancelled]
+        organizerId:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    
+    CreateTripRequest:
+      type: object
+      required: [title, startDate, endDate]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: "Поездка в Сочи"
+        startDate:
+          type: string
+          format: date
+          example: "2026-07-01"
+        endDate:
+          type: string
+          format: date
+          example: "2026-07-07"
+    
+    UpdateTripRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 100
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+        status:
+          type: string
+          enum: [draft, planning, confirmed, booking, booked, active, completed, cancelled]
+    
+    Participant:
+      type: object
+      properties:
+        participantId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum: [organizer, participant]
+        userFullName:
+          type: string
+          description: Локальная копия имени из User Service
+        userEmail:
+          type: string
+          format: email
+          description: Локальная копия email из User Service
+        joinedAt:
+          type: string
+          format: date-time
+    
+    AddParticipantRequest:
+      type: object
+      required: [userId]
+      properties:
+        userId:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+    
+    FlightBooking:
+      type: object
+      properties:
+        bookingId:
+          type: string
+          format: uuid
+        tripId:
+          type: string
+          format: uuid
+        provider:
+          type: string
+          enum: [sirena, yandex_avia]
+          description: Провайдер, через который выполнено бронирование
+        flightNumber:
+          type: string
+          example: "SU1234"
+        departureAirport:
+          type: string
+          example: "SVO"
+        arrivalAirport:
+          type: string
+          example: "AER"
+        departureDatetime:
+          type: string
+          format: date-time
+        arrivalDatetime:
+          type: string
+          format: date-time
+        airline:
+          type: string
+          example: "Aeroflot"
+        cabinClass:
+          type: string
+          enum: [economy, business, first]
+        price:
+          type: number
+          format: float
+        currency:
+          type: string
+          enum: [RUB, USD, EUR]
+        status:
+          type: string
+          enum: [proposed, approved, booked, cancelled, payment_failed, conflict]
+        externalBookingId:
+          type: string
+          nullable: true
+          description: Идентификатор у провайдера (заполняется после финального бронирования)
+        createdAt:
+          type: string
+          format: date-time
+    
+    CreateFlightRequest:
+      type: object
+      required: [provider, flightNumber, departureAirport, arrivalAirport, departureDatetime, arrivalDatetime]
+      properties:
+        provider:
+          type: string
+          enum: [sirena, yandex_avia]
+        flightNumber:
+          type: string
+        departureAirport:
+          type: string
+        arrivalAirport:
+          type: string
+        departureDatetime:
+          type: string
+          format: date-time
+        arrivalDatetime:
+          type: string
+          format: date-time
+        airline:
+          type: string
+        cabinClass:
+          type: string
+          enum: [economy, business, first]
+        price:
+          type: number
+          format: float
+        currency:
+          type: string
+          enum: [RUB, USD, EUR]
+    
+    UpdateFlightRequest:
+      type: object
+      properties:
+        departureDatetime:
+          type: string
+          format: date-time
+        arrivalDatetime:
+          type: string
+          format: date-time
+        price:
+          type: number
+          format: float
+    
+    HotelBooking:
+      type: object
+      properties:
+        bookingId:
+          type: string
+          format: uuid
+        hotelName:
+          type: string
+        checkInDate:
+          type: string
+          format: date
+        checkOutDate:
+          type: string
+          format: date
+        provider:
+          type: string
+          enum: [ostrovok, yandex_travel]
+        price:
+          type: number
+          format: float
+        currency:
+          type: string
+        status:
+          type: string
+          enum: [proposed, approved, booked, cancelled, payment_failed, conflict]
+    
+    CreateHotelRequest:
+      type: object
+      required: [hotelName, checkInDate, checkOutDate, provider]
+      properties:
+        hotelName:
+          type: string
+        checkInDate:
+          type: string
+          format: date
+        checkOutDate:
+          type: string
+          format: date
+        provider:
+          type: string
+          enum: [ostrovok, yandex_travel]
+        price:
+          type: number
+          format: float
+        currency:
+          type: string
+          enum: [RUB, USD, EUR]
+    
+    ActivityBooking:
+      type: object
+      properties:
+        bookingId:
+          type: string
+          format: uuid
+        activityName:
+          type: string
+        activityDatetime:
+          type: string
+          format: date-time
+        provider:
+          type: string
+          enum: [sputnik8, weatlas]
+        price:
+          type: number
+          format: float
+        status:
+          type: string
+          enum: [proposed, approved, booked, cancelled, payment_failed, conflict]
+    
+    CreateActivityRequest:
+      type: object
+      required: [activityName, activityDatetime, provider]
+      properties:
+        activityName:
+          type: string
+        activityDatetime:
+          type: string
+          format: date-time
+        provider:
+          type: string
+          enum: [sputnik8, weatlas]
+        price:
+          type: number
+          format: float
+        currency:
+          type: string
+          enum: [RUB, USD, EUR]
+    
+    Child:
+      type: object
+      properties:
+        childId:
+          type: string
+          format: uuid
+        fullName:
+          type: string
+          description: Имя ребёнка (шифруется AES-256)
+        birthDate:
+          type: string
+          format: date
+          description: Дата рождения (шифруется AES-256)
+        ageGroup:
+          type: string
+          enum: [infant_0_2, child_3_12, teen_13_17]
+        createdAt:
+          type: string
+          format: date-time
+    
+    CreateChildRequest:
+      type: object
+      required: [fullName, birthDate]
+      properties:
+        fullName:
+          type: string
+          example: "Алексей Иванов"
+        birthDate:
+          type: string
+          format: date
+          example: "2016-05-15"
+    
+    LinkChildRequest:
+      type: object
+      required: [bookingId, bookingType]
+      properties:
+        bookingId:
+          type: string
+          format: uuid
+        bookingType:
+          type: string
+          enum: [flight, hotel, activity]
+    
+    Conflict:
+      type: object
+      properties:
+        conflictId:
+          type: string
+          format: uuid
+        tripId:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [time_overlap, logical_contradiction]
+        status:
+          type: string
+          enum: [pending, resolved]
+        options:
+          type: array
+          items:
+            type: object
+            properties:
+              optionId:
+                type: string
+                format: uuid
+              description:
+                type: string
+              votes:
+                type: integer
+        deadline:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+    
+    ResolveConflictRequest:
+      type: object
+      required: [selectedOptionId]
+      properties:
+        selectedOptionId:
+          type: string
+          format: uuid
+    
+    VoteConflictRequest:
+      type: object
+      required: [optionId]
+      properties:
+        optionId:
+          type: string
+          format: uuid
+    
+    SyncRequest:
+      type: object
+      required: [changes]
+      properties:
+        changes:
+          type: array
+          items:
+            type: object
+            properties:
+              changeId:
+                type: string
+                format: uuid
+              action:
+                type: string
+                enum: [create, update, delete]
+              entityType:
+                type: string
+                enum: [flight, hotel, activity, child]
+              payload:
+                type: object
+              timestamp:
+                type: string
+                format: date-time
+        lastSyncTimestamp:
+          type: string
+          format: date-time
+    
+    SyncResponse:
+      type: object
+      properties:
+        appliedChanges:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Список применённых изменений
+        conflicts:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Список идентификаторов конфликтов
+        newTimestamp:
+          type: string
+          format: date-time
+          description: Новое время синхронизации
+    
+    Change:
+      type: object
+      properties:
+        changeId:
+          type: string
+          format: uuid
+        timestamp:
+          type: string
+          format: date-time
+        action:
+          type: string
+          enum: [create, update, delete]
+        entityType:
+          type: string
+          enum: [flight, hotel, activity, child, participant]
+        payload:
+          type: object
+        userId:
+          type: string
+          format: uuid
+    
+    CreatePaymentRequest:
+      type: object
+      required: [tripId]
+      properties:
+        tripId:
+          type: string
+          format: uuid
+          description: Идентификатор поездки для оплаты
+    
+    PaymentResponse:
+      type: object
+      properties:
+        paymentId:
+          type: string
+          format: uuid
+        amount:
+          type: number
+          format: float
+        currency:
+          type: string
+          enum: [RUB]
+        paymentUrl:
+          type: string
+          format: uri
+          description: Ссылка на страницу оплаты платёжного шлюза
+        expiresAt:
+          type: string
+          format: date-time
+
+  responses:
+    BadRequest:
+      description: Некорректные данные запроса
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            validation_error:
+              summary: Ошибка валидации
+              value:
+                code: 400
+                message: "Некорректные данные запроса"
+                details: "Поле 'title' обязательно для заполнения"
+    
+    Unauthorized:
+      description: Требуется аутентификация
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            missing_token:
+              summary: Токен не предоставлен
+              value:
+                code: 401
+                message: "Требуется авторизация"
+            invalid_token:
+              summary: Неверный токен
+              value:
+                code: 401
+                message: "Неверный или истёкший токен"
+    
+    Forbidden:
+      description: Недостаточно прав для выполнения операции
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_organizer:
+              summary: Пользователь не является организатором
+              value:
+                code: 403
+                message: "Только организатор может выполнить это действие"
+            self_delete:
+              summary: Организатор не может удалить себя
+              value:
+                code: 403
+                message: "Организатор не может удалить себя из поездки"
+    
+    NotFound:
+      description: Ресурс не найден
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            trip_not_found:
+              summary: Поездка не найдена
+              value:
+                code: 404
+                message: "Поездка не найдена"

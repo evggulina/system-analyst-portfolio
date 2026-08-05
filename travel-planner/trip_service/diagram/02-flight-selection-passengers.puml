@@ -1,0 +1,64 @@
+@startuml
+autonumber
+title Диаграмма 2: Выбор рейса и добавление участников
+
+actor Участник
+box "Frontend" #lightgrey
+    participant "Frontend" as FE
+end box
+box "API Gateway" #orange
+    participant "API Gateway" as GW
+end box
+box "Trip Service" #gold
+    participant "Trip Service" as TS
+end box
+box "Search Service" #lightblue
+    participant "Search Service" as SS
+end box
+box "DB" #lavender
+    database "PostgreSQL" as DB
+end box
+
+== Получение деталей рейса ==
+Участник -> FE : Выбор конкретного рейса из списка
+activate FE
+FE -> GW : [GET] Получить полные детали выбранного рейса
+activate GW
+GW -> TS : [REST] Запросить обогащенные данные рейса
+activate TS
+TS -> SS : [REST] Получить актуальную цену и детали у Search Service
+activate SS
+SS --> TS : Полные детали + подтвержденная цена
+deactivate SS
+TS --> GW : Детали рейса для отображения
+deactivate TS
+GW --> FE : JSON с полной информацией о рейсе
+deactivate GW
+FE --> Участник : Подтверждение выбора рейса
+deactivate FE
+
+== Добавление участников в рейс ==
+Участник -> FE : Ввод ID/email участников поездки
+activate FE
+FE -> GW : [POST] Добавить выбранных участников к бронированию рейса
+activate GW
+GW -> TS : [REST] Сохранить связь участников с рейсом
+activate TS
+
+ loop Для каждого участника
+        TS -> TS : [LOCAL] Получение user_full_name, user_email из trip_participants
+        TS -> DB : [INSERT] Добавление участника
+        activate DB
+        DB --> TS : OK
+        deactivate DB
+        deactivate TS
+    end
+
+TS --> GW : 201 Created - Участники успешно добавлены
+deactivate TS
+GW --> FE : Подтверждение сохранения
+deactivate GW
+FE --> Участник : Участники привязаны к рейсу
+deactivate FE
+
+@enduml

@@ -1,0 +1,56 @@
+@startuml
+autonumber
+title Диаграмма 1: Поиск рейса (Микросервисная архитектура)
+
+actor Участник
+box "Frontend" #lightgrey
+    participant "Frontend" as FE
+end box
+box "API Gateway" #orange
+    participant "API Gateway" as GW
+end box
+box "Trip Service" #gold
+    participant "Trip Service" as TS
+end box
+box "Search Service" #lightblue
+    participant "Search Service" as SS
+end box
+box "External Providers" #LightCoral
+    participant "СИРЕНА API" as Sirena
+    participant "Яндекс.Авиа API" as Yandex
+end box
+
+Участник -> FE : Поиск рейсов
+activate FE
+FE -> GW : [GET] Получить список доступных рейсов по параметрам
+activate GW
+GW -> TS : Маршрутизация запроса поиска
+activate TS
+TS -> SS : [REST] Запросить поиск рейсов у провайдеров
+activate SS
+
+SS -> Sirena : [HTTP] Поиск рейсов в СИРЕНА
+activate Sirena
+
+alt #pink Нет результатов или ошибка
+    Sirena --> SS : Ошибка / нет данных
+    deactivate Sirena
+    SS -> Yandex : [HTTP] Fallback-поиск в Яндекс.Авиа
+    activate Yandex
+    Yandex --> SS : Результаты (с provider=yandex)
+    deactivate Yandex
+else #lightgreen Успешно
+    Sirena --> SS : Результаты (с provider=sirena)
+    deactivate Sirena
+end
+
+SS --> TS : Список найденных рейсов с metadata
+deactivate SS
+TS --> GW : Ответ клиенту со списком вариантов
+deactivate TS
+GW --> FE : JSON со списком рейсов
+deactivate GW
+FE --> Участник : Отображение вариантов выбора
+deactivate FE
+
+@enduml

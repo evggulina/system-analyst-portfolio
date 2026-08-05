@@ -1,0 +1,84 @@
+@startuml
+autonumber
+title Диаграмма 3: Оплата и финальное бронирование (Async via Kafka)
+
+actor Участник
+box "Frontend" #lightgrey
+    participant "Frontend" as FE
+end box
+box "API Gateway" #orange
+    participant "API Gateway" as GW
+end box
+box "Payment Service" #LightSeaGreen
+    participant "Payment Service" as PS
+end box
+box "Trip Service" #gold
+    participant "Trip Service" as TS
+end box
+box "Kafka" #Salmon
+    queue "payment-events" as Kafka
+end box
+box "External Systems" #LightCyan
+    participant "Провайдер (СИРЕНА)" as Provider
+end box
+
+== Инициация оплаты ==
+Участник -> FE : Подтверждение перехода к оплате
+activate FE
+FE -> GW : [POST] Создать платеж для бронирования
+activate GW
+GW -> PS : [REST] Инициировать платежную транзакцию
+activate PS
+PS -> PG : [REST] Создать платеж в ЮKassa
+activate PG
+PG --> PS : Ссылка на страницу оплаты
+deactivate PG
+PS --> GW : paymentUrl для редиректа
+deactivate PS
+GW --> FE : Redirect URL
+deactivate GW
+FE --> Участник : Перенаправление на форму оплаты ЮKassa
+deactivate FE
+
+== Обработка результата (Асинхронно) ==
+PG -> PG : Обработка платежа пользователем
+activate PG
+
+    alt #lightgreen [Платёж успешен]
+        PG -> PS : [Webhook] Уведомление об успешной оплате
+        deactivate PG
+        activate PS
+        PS -> Kafka : [Publish] Событие PaymentSucceeded
+        deactivate PS
+        
+        Kafka -> TS : [Consume] Получить событие PaymentSucceeded
+        activate TS
+        TS -> Provider : [REST] Выполнить финальное бронирование у провайдера
+        activate Provider
+        Provider --> TS : external_booking_id = "ABC123"
+        deactivate Provider
+        TS -> DB : Обновить статус бронирования на 'booked', заполнить external_booking_id
+        activate DB
+        DB --> TS : OK
+        deactivate DB
+        TS -> Kafka : [Publish] Событие BookingStatusChanged
+        deactivate TS
+        
+    else #pink [Платёж отклонён]
+        PG -> PS : [Webhook] Уведомление об ошибке платежа
+        deactivate PG
+        activate PS
+        PS -> Kafka : [Publish] Событие PaymentFailed
+        deactivate PS
+        
+        Kafka -> TS : [Consume] Получить событие PaymentFailed
+        activate TS
+        TS -> DB : Обновить статус бронирования на 'payment_failed'
+        activate DB
+        DB --> TS : OK
+        deactivate DB
+        TS -> Kafka : [Publish] Событие BookingStatusChanged (для уведомления участников)
+        deactivate TS
+    end
+
+@enduml
